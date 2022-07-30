@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+    parameters { 
+        choice(name: 'TF_ACTION', choices: ['plan', 'apply'], description: 'Use branch or commit for Plan. Use past commit for Apply')
+        string(name: 'COMMIT', defaultValue: '', description: 'Name of branch or commit to plan OR commit to apply')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'qa'], description: 'Environment to deploy to')
+    }
+    stages {
+        stage('Setup') {
+            steps {
+                echo "DEBUG: parameter TF_ACTION = ${params.TF_ACTION}"
+                echo "DEBUG: parameter COMMIT = ${params.COMMIT}"
+                echo "DEBUG: parameter ENVIRONMENT = ${params.ENVIRONMENT}"
+                script {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: params.COMMIT]],
+                    userRemoteConfigs: scm.userRemoteConfigs
+                    ])
+                }
+            }
+        } // end stage Setup 
+        stage('Terraform plan') {
+            when{
+                expression { params.TF_ACTION == 'plan' }
+                }
+            environment { 
+                BUILDSPEC_FILE = "pipeline/buildspec.yml"
+                CODEBUILD_PROJECT = 'general-build-dev-astech-io'
+                }
+            steps {
+                echo "### starting Terraform plan stage ###"
+                echo "CODEBUILD_PROJECT: ${CODEBUILD_PROJECT}"
+                echo "BUILDSPEC_FILE: ${BUILDSPEC_FILE}"
+                script{
+                    awsCodeBuild    projectName: "${CODEBUILD_PROJECT}",
+                                    buildSpecFile: "${BUILDSPEC_FILE}",
+                                    envVariables: "[ { ENVIRONMENT, $params.ENVIRONMENT }, { TF_ACTION, $params.TF_ACTION }, { COMMIT, $params.COMMIT } ]",
+                                    credentialsType: 'keys',
+                                    region: 'us-east-1',
+                                    sourceControlType: 'jenkins'
+                }
+            }
+        } //end of Terraform plan stage
+        stage('Terraform apply') {
+            when{
+                expression { params.TF_ACTION == 'apply' }
+                }
+            environment { 
+                BUILDSPEC_FILE = "pipeline/buildspec.yml"
+                CODEBUILD_PROJECT = 'general-build-dev-astech-io'
+            }
+            steps {
+                echo "### starting Terraform apply stage ###"
+                echo "CODEBUILD_PROJECT: ${CODEBUILD_PROJECT}"
+                echo "BUILDSPEC_FILE: ${BUILDSPEC_FILE}"
+                script{
+                    awsCodeBuild    projectName: "${CODEBUILD_PROJECT}",
+                                    buildSpecFile: "${BUILDSPEC_FILE}",
+                                    envVariables: "[ { ENVIRONMENT, $params.ENVIRONMENT }, { TF_ACTION, $params.TF_ACTION }, { COMMIT, $params.COMMIT } ]",
+                                    credentialsType: 'keys',
+                                    region: 'us-east-1',
+                                    sourceControlType: 'jenkins'
+                }
+            }
+        } //end of Terraform apply stage
+    } //end of stages
+}
